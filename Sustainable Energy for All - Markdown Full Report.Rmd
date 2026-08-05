@@ -2,7 +2,8 @@
 title: "Drives and Outcomes of Transitioning to Clean Energy"
 author: "Sam Gianan"
 date: "2026-07-31"
-output: 
+output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -758,10 +759,10 @@ matrix_C_panel <- matrix_C %>%
     }),
     
     # Creates "lag_1_" prefixes for all fuels
-    across(all_of(fuel_cols), ~ lag(.x, 1), .names = "lag_1_{.col}"),
+    across(all_of(fuel_cols), ~ dplyr::lag(.x, 1), .names = "lag_1_{.col}"),
     
     # Creates "lead_1_" prefixes for all fuels
-    across(all_of(fuel_cols), ~ lead(.x, 1), .names = "lead_1_{.col}"),
+    across(all_of(fuel_cols), ~ dplyr::lead(.x, 1), .names = "lead_1_{.col}"),
     
     # Creates "mean_" prefixes for all country-specific baseline averages
     across(all_of(fuel_cols), ~ mean(.x, na.rm = TRUE), .names = "mean_{.col}")
