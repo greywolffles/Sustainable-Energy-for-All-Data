@@ -1,8 +1,10 @@
 ---
-title: "Sustainable Energy for All - Markdown Report"
+title: "Drives and Outcomes of Transitioning to Clean Energy"
 author: "Sam Gianan"
 date: "2026-07-31"
-output: html_document
+output: 
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include = FALSE}
@@ -11,77 +13,78 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, results = 
 
 # Executive Summary
 
-I'll be dealing with the two main questions from the Tidy Tuesday prompt:
+The dataset for this project showcases energy usage of all nations from 1990 to 2010, alongside other economic factors. Three questions are posed:
 
-1. Which countries have the lowest capacity for solar energy?
-2. What form of renewable energy has, on average, experienced the fastest rate of adoption?
+1.  How does expanding total electricity access accelerate a nation's shift from traditional biomass toward modern renewable energy sources?
+
+2.  How do shifts in economic structure compare to improvements in technological efficiency when it comes to driving a nation's primary energy savings?
+
+3.  Which regions have successfully achieved growing their economic wealth while simultaneously decreasing total primary energy consumption, also known as absolute decoupling?
+
+Despite a decrease in traditional biomass usage and an increase in renewable energy usage, these effects remain statistically insignificant, indicating that increasing access does not drive an immediate energy shift. Furthermore, growth in economic activity has shown itself to be more impactful than increasing technological efficiency in saving energy. Finally, no region has achieved absolute decoupling. With these insights, more thought must be given to building policies and solutions revolving energy consumption due to its nonlinear and even paradoxical nature.
+
+------------------------------------------------------------------------
+
+# Introduction
+
+This project deals with the Sustainable Energy for All (SE4ALL) dataset, which showcases the energy usage composition of nations from 1990 to 2010 alongside economic growth.
+
+I'll be dealing with three main questions:
+
+1.  To what extent does expanding total electricity access accelerate a nation's shift from traditional biomass toward modern renewable energy sources?
+2.  How do shifts in a nation's economic structure compare to improvements in technological efficiency when it comes to driving absolute primary energy savings?
+3.  Which regions have successfully achieved absolute decoupling i.e. growing economic wealth while simultaneously decreasing total primary energy consumption?
+
+Essentially, this project is a practice for trying out data analysis for economics topics I'm not entirely familiar with. This is also my first experience working with time-series data, so I'll be writing out my thought process for each plot and method, for both your understanding and my own. The project does not go into creating a model and only delves into statistical analysis; however, its writeup is a demonstration of communicating variables and the methodology from scratch. As this entire project leans a lot more on the exploratory aspect, expect that this report is informal, and instead is a more personal explanation for my though process during the analysis section.
+
+------------------------------------------------------------------------
+
+# Methodology
 
 ## Loading and Profiling the Data
 
-I first loaded the needed libraries, as well as the .csv file for analysis.
+I first loaded the needed libraries, as well as the .csv file for analysis. Comments are placed to describe what each library's purpose is.
 
-``` {r}
-library(tidyverse)
-library(ggnewscale)
-library(naniar)
-library(mice)
-library(scales)
-library(countrycode)
-library(maps)
+```{r}
+library(tidyverse) # for data visualization and manipulation
+library(ggnewscale) # for allowing more than one color scale for plots
+library(scales) # for scaling logic in plots
+library(patchwork) # stacks plots vertically
+
+library(naniar) # for summarizing missing data
+library(mice) # for logistic imputation
+library(Amelia) # for multivariate time-series imputation
+library(tsibble) # for allowing tibbles to handle time-series data
+library(feasts) # for providing time-series analysis tools
+library(imputeTS) # for imputing in time-series data
+
+library(countrycode) # for standardizing country codes
+library(maps) # for creating maps
+library(zoo) # for handling time-series analysis
+library(knitr) # knitting documents and tibbles
+
+library(plm) # for linear panel data model analysis
+library(lmtest) #  for coeftest parsing
+library(sandwich) # for clustered robust vcov matrices
 
 energy <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2026/2026-05-26/energy_cleaned.csv")
 head(energy)
 ```
 
-Before I pursue exploratory data analysis, I'll first explain what the variables are; it is vital to first comprehend them before their relationshios.
+## Data Cleaning
 
-**country_name**, **country_code**, and **year** are self-explanatory, so let's move on to the remaining 49 variables. Some are already explained in the codebook of the original GitHub repository, so notes here will be about variables that need further explanation. Examples of such variables are component indices, purchasing power parity, primary energy savings, and more.
+Let's first check our dataset for the countries listed.
 
-### Understanding LMDI Analysis
-
-Logarithmic Mean Divisia Index (LMDI) decomposition analysis is a mathematical method that splits the reasons for a change into various factors. An example would be for when one's water bill increases. There may be a variety of factors for this change, such as a systemic increase from the company, an increase in personal water usage, or others. LMDI analysis allows for the full change to be split into these various factors. It's often applied to environmental data and heavily preferred due to fully accounting for changes, leaving no residuals.
-
-This is important to explain three of our variables, **divisia_decomp_analysis_activity_component_index**, **divisia_decomp_analysis_energy_intensity_component_index**, and **divisia_decomp_analysis_structure_component_index**. 
-
-- The activity component index is the change in energy use due to population and economy growth.
-- The energy intensity component index measures efficiency; it reflects change in energy use per unit of activity and measures technological efficiency.
-- The structure component index showcases the change in energy use due to shifts of the impact shared by various sectors (such as agriculture, manufacturing, etc.).
-
-From the values of the indices, it can be observed that the indices are multiplicative. This means:
-
-- Value > 1 meeans that the factor increased energy usage.
-- Value < 1 means that the factor decreased energy usage.
-- Value = 1 means that the factor had no effect on energy usage.
-
-### Variable Notes
-
-Here, I'll list brief descriptions and notes on other variables that may not be self-explanatory. These values are similarly described in the codebook, but further information is written here to supply the economic and environmental jargon. Note that for 2005 US dollar variables, we use this value to remove the impact of inflation in calculations.
-
-- **energy_intensity_level_final_energy_megajoules_per_usd_2005_ppp** | This measures how much final energy usage in megajoules is needed to produce 1 US dollar (2005 value) of GDP. *Final energy* refers to the processed energy source, such as electricity, gasoline, etc. 
-- **energy_intensity_level_primary_energy_megajoules_per_usd_2005_ppp** | This measures how much primary energy usage in megajoules is needed to produce 1 US dollar (2005 value) of GDP. *Primary energy* refers to the raw energy source, such as sunlight, crude oil, etc.
-- **energy_intensity_industrial_sector_megajoules_per_usd_2005** | This measures the energy usage by just the industrial sector, encompassing manufacturing, construction, and production.
-- **energy_intensity_other_sectors_megajoules_per_usd_2005** | This measures the energy usage by every other sector *except* the industrial sector.
-- **energy_savings_primary_energy_terajoules** | This describes the amount of raw energy sources saved by optimizing processing.
-- **final_to_primary_energy_ratio_pct** | This describes how much energy is lost during the extraction, processing, and transmission stages.
-- **renewable_energy_installed_capacity_gigawatts**, **share_of_renewable_capacity_in_total_capacity_pct**, and **total_installed_generation_capacity_gigawatts** | *Installed capacity* refers to the maximum total capacity that the power source can produce.
-- **thermal_efficiency_in_power_supply_pct** | *Thermal efficiency* measures how well a system can convert heat into power or electricity.
-
-Now that we have a more technical understanding of the dataset's background, we can now move on to exploratory data analysis.
-
-## Data Cleaning and Exploratory Data Analysis
-
-Let's first check our dataset for the countries listed. 
-
-``` {r}
+```{r}
 energy %>% 
-  distinct(country_name) %>% 
-  pull(country_name)
+  distinct(country_name)
 ```
 
-Some values in the **country_name** variable refer to region and income. We must then remove these rows. Let us also replace the **yr** variable with **year** as this would be more intuitive. This also applies to **country_name**, becoming **country**.
+Some values in the `country_name` variable refer to region and income. We must then remove these rows. Let us also replace the `yr` variable with `year` as this would be more intuitive. This also applies to `country_name`, becoming `country`.
 
-``` {r}
-names_to_remove <- c("Caucasus and Central Asia", "Eastern Asia (including Japan)", "Eastern Asia (not including Japan)", "Eastern Europe", "Europe", "High income", "High income: nonOECD", "High income: OECD", "Latin America and Caribbean", "Low & middle income", "Low income", "Lower middle income", "Middle income", "Northern Africa" , "Nothern America", "Oceania", "Oceania (not including Australia and New Zealand)", "South Eastern Asia", "Southern Asia", "Sub-Saharan Africa", "Upper middle income", "Western Asia", "Western Sahara", "World")
+```{r}
+# "Nothern America" misspelling is deliberate; actual spelling in original dataset
+names_to_remove <- c("Caucasus and Central Asia", "Eastern Asia (including Japan)", "Eastern Asia (not including Japan)", "Eastern Europe", "Europe", "High income", "High income: nonOECD", "High income: OECD", "Latin America and Caribbean", "Low & middle income", "Low income", "Lower middle income", "Middle income", "Northern Africa" , "Nothern America", "Oceania", "Oceania (not including Australia and New Zealand)", "South Eastern Asia", "Southern Asia", "Sub-Saharan Africa", "Upper middle income", "Western Asia", "Western Sahara", "World") 
 
 energy <- energy %>%
   filter(!country_name %in% names_to_remove)
@@ -89,9 +92,9 @@ energy <- energy %>% rename(year = yr)
 energy <- energy %>% rename(country = country_name)
 ```
 
-To make plotting easier during exploratory data analysis, we'll also need to rename longer variables. Comments are added to explain the categoriazation of variables.
+To make plotting easier during exploratory data analysis, we'll also need to rename longer variables. Comments are added to explain the categorization of variables.
 
-``` {r}
+```{r}
 energy <- energy %>%
   rename(
     # access
@@ -118,7 +121,7 @@ energy <- energy %>%
     renewable_gwh = renewable_energy_electricity_output_gigawatt_hours,
     renewable_capacity_gw = renewable_energy_installed_capacity_gigawatts,
     renewable_capacity_pct = share_of_renewable_capacity_in_total_capacity_pct,
-    # others
+    # efficiency and capacity
     thermal_eff_pct = thermal_efficiency_in_power_supply_pct,
     total_output_gwh = total_electricity_output_gigawatt_hours,
     total_final_consumed_tj = total_final_consumption_terajoules,
@@ -133,7 +136,7 @@ energy <- energy %>%
 
 For further analysis, let's also aggregate the countries by region.
 
-``` {r}
+```{r}
 energy <- energy %>%
   mutate(region = countrycode(country, origin = "country.name", destination = "region"))
 
@@ -145,75 +148,140 @@ energy <- energy %>%
   mutate(region = ifelse(is.na(region) & country == "Reunion", "Sub-Saharan Africa", region))
 ```
 
-We can now inspect for N/A values. Using the naniar package, we can get the percentage of N/A values for each variable and visualize their distribution. A quick check also lets us know that no row is completely filled with N/A values. 
+Before I pursue exploratory data analysis, I'll first explain what the variables are; it is vital to first comprehend them before their relationships.
 
-We can note that several energy types have a large amount of N/A values, namely geothermal energy, liquid biofuels, and wind energy. These values must be properly imputed before further exploratory data analysis.
+`country_name`, `country_code`, and `year` are self-explanatory, so let's move on to the remaining 49 variables. Some are already explained in the codebook of the original GitHub repository, so notes here will be about variables that need further explanation. Examples of such variables are component indices, purchasing power parity, primary energy savings, and more.
 
-``` {r}
-energy %>%
-  miss_var_summary() %>%
-  slice_head(n = 20)
-vis_miss(energy) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-sum(rowSums(is.na(energy)) == ncol(energy))
+### Understanding LMDI Analysis
+
+Logarithmic Mean Divisia Index (LMDI) decomposition analysis is a mathematical method that splits the reasons for a change into various factors. An example would be for when one's water bill increases. There may be a variety of factors for this change, such as a systemic increase from the company, an increase in personal water usage, or others. LMDI analysis allows for the full change to be split into these various factors. It's often applied to environmental data and heavily preferred due to fully accounting for changes, leaving no residuals.
+
+This is important to explain three of our variables, `activity_index`, `efficiency_index`, and `structure_index`.
+
+- `activity_index` is the change in energy use due to population and economy growth.
+- `efficiency_index` reflects change in energy use per unit of activity and measures technological efficiency.
+- `structure_index` showcases the change in energy use due to shifts of the impact shared by various sectors (such as agriculture, manufacturing, etc.).
+
+From the values of the indices, it can be observed that the indices are multiplicative. This means:
+
+- Value \> 1 meeans that the factor *increased* energy usage.
+- Value \< 1 means that the factor *decreased* energy usage.
+- Value = 1 means that the factor had *no effect* on energy usage.
+
+### Variable Notes
+
+Here, I'll list brief descriptions and notes on other variables that may not be self-explanatory. These values are similarly described in the codebook, but further information is written here to supply the economic and environmental jargon. Note that for 2005 US dollar variables, we use this value to remove the impact of inflation in calculations.
+
+- `final_energy_ppp_mj` \| This (Purchasing Power Parity) measures how much final energy usage in megajoules is needed to produce 1 US dollar (2005 value) of GDP. *Final energy* refers to the processed energy source, such as electricity, gasoline, etc.
+- `primary_energy_ppp_mj` \| This (Purchasing Power Parity) measures how much primary energy usage in megajoules is needed to produce 1 US dollar (2005 value) of GDP. *Primary energy* refers to the raw energy source, such as sunlight, crude oil, etc.
+- `energy_agri_mj` \| This measures the energy usage by just the agricultural sector.
+- `energy_industrial_mj` \| This measures the energy usage by just the industrial sector, encompassing manufacturing, construction, and production.
+- `energy_others_mj` \| This measures the energy usage by every other sector *except* the agricultural and industrial sectors.
+- `primary_energy_savings_tj` \| This describes the amount of raw energy sources saved by optimizing processing.
+- `fp_ratio_pct` \| This describes how much energy is lost during the extraction, processing, and transmission stages.
+- `renewable_capacity_gw`, `renewable_capacity_pct`, and `total_capacity_gw` \| *Installed capacity* refers to the maximum total capacity that the power source can produce.
+- `thermal_eff_pct` \| *Thermal efficiency* measures how well a system can convert heat into power or electricity.
+
+### Primary Variables
+
+#### To what extent does expanding total electricity access accelerate a nation's shift from traditional biomass toward modern renewable energy sources?
+
+This question looks at the energy shift at a foundational level, seeing if the shift from traditional biomass is successful.
+
+- `rural_access_elec`, `urban_access_elec`, and `total_access_elec` represent the access of a population to energy sources.
+- `traditional_biomass_eu_pct` and `traditional_biomass_consumed_tj` represent the consumed amount of traditional biomass.
+
+#### How do shifts in a nation's economic structure compare to improvements in technological efficiency when it comes to driving absolute primary energy savings?
+
+This question looks at the energy shift at a macroeconomic level, checking if the change is driven by shifts in industry sectors or by improving technology.
+
+- `structure_index` represents economic structure.
+
+- `efficiency_index` represents technological efficiency.
+
+- `primary_energy_savings_tj` is the variable where the comparison of the indices will be applied.
+
+#### Which regions have successfully achieved absolute decoupling i.e. growing economic wealth while simultaneously decreasing total primary energy consumption?
+
+This question looks at the energy shift from the global lens, asking if these changes have allowed countries to develop while minimizing detrimental effects.
+
+- `final_energy_ppp_mj` or `activity_index` represent economic wealth.
+- `total_primary_tj` represents total primary energy consumption.
+
+------------------------------------------------------------------------
+
+## Exploratory Data Analysis
+
+### Missingness of Values
+
+We can now inspect for N/A values. Using the naniar package, we can get the percentage of N/A values for each variable and visualize their distribution. A quick check also lets us know that no row is completely filled with N/A values.
+
+```{r}
+vis_miss(energy) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0, size = 6))
 ```
 
-### Fuel and Electricity Access
+We can deal with non-solid fuel and electricity access as a separate dataframe during EDA. Furthermore, we can note that several energy types have a large amount of N/A values, namely geothermal energy, liquid biofuels, and wind energy. These values must be properly imputed after EDA.
+
+It is important to note that since we are only in the EDA stage, plots during final visualization may differ due to the imputation of N/A values.
+
+For future time-series analysis, we can make use of the `as_tsibble()` function to allow for indexing by year.
+
+```{r}
+energy_ts <- energy %>% 
+  as_tsibble(key = country, index = year)
+```
+
+### Non-solid Fuel and Electricity Access
+
+Let's start with some general analysis for a bird's-eye understanding of the data.
 
 Despite the high percentage of missing values for variables regarding fuel/electricity access, these variables will not be dropped as their missingness is not random; access is measured every 10 years. We can instead store access into a separate dataframe for analysis.
 
-``` {r}
-access <- energy %>%
+```{r}
+access <- energy_ts %>%
   select(country, country_code, year, rural_access_fuel, urban_access_fuel, total_access_fuel, rural_access_elec, urban_access_elec, total_access_elec, region)
 access <- access %>%
   filter(!(year > 1990 & year < 2000) & !(year > 2000 & year < 2010))
-access
 ```
 
-We shall first check for the top countries with access to non-solid fuel and electricity. In reading through the data would show us that it's recurring for nations to be at 100% electricity access, while fuel_access is at 95% for the
+We shall first check for the top countries with access to non-solid fuel and electricity. In reading through the data would show us that it's recurring for nations to be at 100% electricity access, while fuel_access is at 95% for the top nations.
 
-``` {r}
+```{r}
 highest_access_countries_fuel <- access %>%
   group_by(country) %>%
   filter(min(total_access_fuel, na.rm = TRUE) == 95) %>%
   distinct(country)
 
-highest_access_countries_fuel
-
 perfect_access_countries_elec <- access %>%
   group_by(country) %>%
   filter(min(total_access_elec, na.rm = TRUE) == 100) %>%
   distinct(country)
-
-perfect_access_countries_elec
 ```
 
 We can observe that there are a lot of nations with near-perfect to perfect access to fuel and electricity over the last 20 years due to rapid urbanization, small land area, and advanced economy; it must be noted though that this does not mean a perfect distribution of electricity. Therefore, we shall instead focus on which countries continue to have the *least* access to fuel and electricity.
 
-``` {r}
+```{r paged.print = FALSE}
 lowest_access_countries_fuel <- access %>%
-  group_by(year) %>%
+  index_by(year) %>%
   mutate(fuel_rank = min_rank(total_access_fuel)) %>%
   arrange(year, fuel_rank) %>%
   slice_min(order_by = fuel_rank, n = 10) %>%
   ungroup() %>%
   distinct(country)
 
-print(lowest_access_countries_fuel)
-
 lowest_access_countries_elec <- access %>%
-  group_by(year) %>%
+  index_by(year) %>%
   mutate(elec_rank = min_rank(total_access_elec)) %>%
   arrange(year, elec_rank) %>%
   slice_min(order_by = elec_rank, n = 10) %>%
   ungroup() %>%
   distinct(country)
-
-print(lowest_access_countries_elec)
 ```
 
-We can now map out these values.
+We can now map out these values to better understand their geographical proximity.
 
-``` {r}
+```{r}
 world_map <- map_data("world")
 
 # highest
@@ -232,19 +300,10 @@ highlighted_map_highest <- world_map %>%
   )) %>%
   filter(category != "None")
 
-highlighted_map_highest <- world_map %>%
-  mutate(category = case_when(
-    region %in% highest_fuel_countries & region %in% highest_elec_countries ~ "Highest Access to Both",
-    region %in% highest_fuel_countries ~ "Highest Non-solid Fuel Access",
-    region %in% highest_elec_countries ~ "Highest Electricity Access",
-    TRUE ~ "None"
-  )) %>%
-  filter(category != "None")
-
 ggplot() +
   geom_polygon(data = world_map_with_regions,
                aes(x = long, y = lat, group = group, fill = world_region),
-               color = "#ffffff", linewidth = 0.1) +
+               color = "white", linewidth = 0.1) +
   scale_fill_viridis_d(option = "magma", alpha = 0.2, name = "World Regions") +
   
   new_scale_fill() +
@@ -294,118 +353,63 @@ ggplot() +
 
 We notice that countries with the highest access are located around North America, Europe & Central Asia, and East Asia & Pacific, while those with the lowest access are generally in Sub-Saharan Africa and South Asia.
 
-### LMDI Indices
+### Biomass Reliance and Electricity Access
 
-``` {r}
-geom_mean <- function(x) {
-  exp(mean(log(x[x > 0 & !is.na(x)])))
-}
+#### Correlation and Scatter Analysis
 
-regional_tidy <- energy %>%
-  filter(!is.na(activity_index)) %>%
-  group_by(region, year) %>%
-  summarise(
-    Activity = geom_mean(activity_index),
-    Efficiency = geom_mean(efficiency_index),
-    Structure = geom_mean(structure_index),
-    .groups = "drop"
-  ) %>%
-  pivot_longer(
-    cols = c(Activity, Efficiency, Structure),
-    names_to = "effect",
-    values_to = "index_value"
-  )
-
-ggplot(regional_tidy, aes(x = year, y = index_value, color = effect, group = effect)) +
-  geom_line(linewidth = 0.5) +
-  geom_point(size = 1) +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "gray50") +
-  facet_wrap(~ region) +
-  scale_color_manual(
-    values = c(
-      "Activity"   = "#FB8861",
-      "Efficiency" = "#B63679",
-      "Structure"  = "#51127C"
-    )
-  ) +
+```{r}
+energy_ts %>% 
+  filter(year %in% c(1990, 2000, 2010)) %>%
+  ggplot(aes(x = total_access_elec, y = traditional_biomass_eu_pct)) +
+  geom_point(aes(color = region), alpha = 0.7) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  facet_grid(. ~ year) +
   labs(
-    title = "Regional Multiplicative LMDI Drivers Over Time",
-    subtitle = "Aggregated using geometric means (Base Year = 1.0)",
-    x = "Year",
-    y = "Index Value",
-    color = "Decomposition Factor"
-  ) +
-  theme(
-    legend.position = "bottom",
-    strip.text = element_text(face = "bold", size = 10)
+    x = "Electricity Access of Total Population (%)", 
+    y = "Traditional Biomass Consumed by End-Users (%)", 
+    title = "Biomass Reliance vs. Total Electricity Access",
+    subtitle = "Decadal progression comparison",
+    color = "Region"
   )
 ```
 
-From the graph above, the first most noticeable pattern is the sudden drop as we approach the 2010s. This is due to the 2008 financial crisis, which largely affected economic growth across all nations. It can be observed, however, some regions have steeper economic growth over time, such as East Asia & Pacific and South Asia. Others, such as North America and Europe & Central Asia have steadier growth. 
+The trendline shown slopes downwards, indicating a negative correlation i.e. as electricity access increases, the traditional biomass consumption decreases. The gray area indicates the confidence interval, with its narrowness showing statistical reliability. It can be observed that Sub-Saharan Africa dominates the upper left quadrant, and Latin American, the Caribbean, and South Asia forms a transition. Europe, Central Asia, and North America are clustered at the corner of the lower right quadrant, meaning that these countries have achieved 100% electricity access and almost 0% dependence on traditional biomass.
 
-The structure index also remains close to the baseline of 1.0, meaning that across the world, changes in economic sectors have a negligible effect upon energy usage.
+We can also observe that as the years go by, nations shift to higher electricity access and lower consumed traditional biomass.
 
-For efficiency, its index goes downwards for almost all regions, except Latin America & Caribbean and Middle East & North Africa, meaning that energy usage was not offset much by developments in technology. It can be noted for these regions that technological efficiency did not combat activity growth as efficiently as other nations. 
-
-### Renewable Energy Distribution
-
-``` {r}
-energy_absolute_long <- energy %>%
-  select(
-    region, country, year,
-    Biogas = biogas_consumed_tj,
-    Geothermal = geothermal_energy_consumed_tj,
-    Hydro = hydro_energy_consumed_tj,
-    `Liquid Biofuels` = liquid_biofuels_consumed_tj,
-    Marine = marine_consumed_tj,
-    `Modern Biomass` = modern_biomass_consumed_tj,
-    Solar = solar_energy_consumed_tj,
-    `Traditional Biomass` = traditional_biomass_consumed_tj,
-    Waste = waste_energy_consumed_tj,
-    Wind = wind_energy_consumed_tj
-  ) %>%
-  pivot_longer(
-    cols = Biogas:Wind,
-    names_to = "renewable_type",
-    values_to = "consumption_tj"
-  ) %>%
-  mutate(consumption_tj = replace_na(consumption_tj, 0))
-
-absolute_regional_summary <- energy_absolute_long %>%
-  group_by(region, renewable_type) %>%
-  summarise(total_tj = sum(consumption_tj, na.rm = TRUE), .groups = "drop")
-
-print(absolute_regional_summary)
-
-ggplot(absolute_regional_summary, aes(x = region, y = total_tj, fill = renewable_type)) +
-  geom_bar(stat = "identity", position = "fill") +
+```{r}
+energy_ts %>% 
+  filter(year %in% c(1990, 2000, 2010)) %>% 
+  pivot_longer(                                
+    cols = c(rural_access_elec, urban_access_elec),
+    names_to = "loc_type",
+    values_to = "access_pct"
+  ) %>% 
+  ggplot(aes(x = access_pct, y = traditional_biomass_consumed_tj, color = loc_type)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm") +
   theme_minimal() +
+  scale_y_log10() +
+  facet_grid(loc_type ~ year) +
   labs(
-    title = "Proportional Composition of Absolute End-User Consumption",
-    x = "Region",
-    y = "Proportion of Total Volumetric Mix",
-    fill = "Renewable Type"
-  ) +
-  scale_y_continuous(labels = scales::percent) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-yearly_absolute_trend <- energy_absolute_long %>%
-  group_by(region, year, renewable_type) %>%
-  summarise(total_tj = sum(consumption_tj, na.rm = TRUE), .groups = "drop")
-
-ggplot(yearly_absolute_trend, aes(x = year, y = total_tj, color = renewable_type)) +
-  geom_line(size = 0.7) +
-  facet_wrap(~region, scales = "free_y") +
-  theme_minimal() +
-  labs(
-    title = "Absolute End-User Consumption Volumetric Trends Over Time",
-    x = "Year",
-    y = "Total Consumption (Terajoules)",
-    color = "Renewable Type"
+    title = "Biomass Consumption vs. Electricity Access (Decadal View)",
+    x = "Electricity Access (%)",
+    y = "Traditional Biomass Consumed (TJ)",
+    color = "Location Type"
   )
+
 ```
 
-``` {r}
+There is a slightly negative correlation for both rural and urban populations, similar to the previous graph. However, it must be noted that the data has a high variance, and high amounts of traditional biomass are still consumed even at 100% electricity access. The values at the baseline zero strip represent countries with zero reliance on traditional biomass.
+
+Another observation is that for urban populations, more nations are clustered at having 100% electricity access.
+
+### Effect of Economic Structure vs. Efficiency on Energy Savings
+
+#### Dual-Axis Trend Analysis
+
+```{r}
 top_5_countries <- energy %>%
   rowwise() %>%
   mutate(total_country_consumption = sum(c_across(ends_with("_consumed_tj")), na.rm = TRUE)) %>%
@@ -416,165 +420,662 @@ top_5_countries <- energy %>%
   slice_max(order_by = cumulative_consumption, n = 5) %>%
   pull(country)
 
-energy_top5_comparison <- energy %>%
-  filter(country %in% top_5_countries) %>%
-  select(
-    country, region, year, total_capacity_gw,
-    Biogas = biogas_consumed_tj,
-    Geothermal = geothermal_energy_consumed_tj,
-    Hydro = hydro_energy_consumed_tj,
-    `Liquid Biofuels` = liquid_biofuels_consumed_tj,
-    Marine = marine_consumed_tj,
-    `Modern Biomass` = modern_biomass_consumed_tj,
-    Solar = solar_energy_consumed_tj,
-    `Traditional Biomass` = traditional_biomass_consumed_tj,
-    Waste = waste_energy_consumed_tj,
-    Wind = wind_energy_consumed_tj
-  ) %>%
-  pivot_longer(
-    cols = Biogas:Wind,
-    names_to = "renewable_type",
-    values_to = "consumption_tj"
-  ) %>%
-  mutate(
-    consumption_tj = replace_na(consumption_tj, 0),
-    total_capacity_gw = replace_na(total_capacity_gw, 0)
-  )
-
-top5_summary <- energy_top5_comparison %>%
+complete_indices <- energy %>%
   group_by(country) %>%
-  summarise(
-    total_consumed_tj = sum(consumption_tj, na.rm = TRUE),
-    average_capacity_gw = mean(total_capacity_gw, na.rm = TRUE)
-  ) %>%
-  arrange(desc(total_consumed_tj))
-
-print(top5_summary)
-```
-
-``` {r}
-plot_data_consumption <- energy_top5_comparison %>%
-  group_by(country, renewable_type) %>%
-  summarise(Value = sum(consumption_tj, na.rm = TRUE), .groups = "drop") %>%
-  mutate(Metric = "End-User Consumption (TJ)")
-
-plot_data_capacity <- energy_top5_comparison %>%
-  group_by(country) %>%
-  summarise(Value = mean(total_capacity_gw, na.rm = TRUE), .groups = "drop") %>%
-  mutate(renewable_type = "Total Infrastructure", Metric = "Avg Infrastructure Capacity (GW)")
-
-combined_plot_data <- bind_rows(plot_data_consumption, plot_data_capacity)
-
-# Plot using facets to separate the incompatible units (TJ vs GW)
-ggplot(combined_plot_data, aes(x = country, y = Value, fill = renewable_type)) +
-  geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~Metric, scales = "free_y") +
-  theme_minimal() +
-  labs(
-    title = "Top 5 Countries: Renewable Consumption vs. Infrastructure Capacity",
-    x = "Country",
-    y = "Scale Value",
-    fill = "Energy Component"
-  ) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-yearly_totals_top5 <- energy_top5_comparison %>%
-  group_by(country, year, total_capacity_gw) %>%
-  summarise(yearly_consumption_tj = sum(consumption_tj, na.rm = TRUE), .groups = "drop")
-
-# Scatter plot showing historical trajectory paths
-ggplot(yearly_totals_top5, aes(x = total_capacity_gw, y = yearly_consumption_tj, color = country)) +
-  geom_point(size = 2, alpha = 0.6) +
-  geom_path(aes(group = country), arrow = arrow(length = unit(0.15, "cm"))) + # Shows direction over time
-  theme_minimal() +
-  labs(
-    title = "Historical Trajectory: Infrastructure Capacity vs. Actual Consumption",
-    subtitle = "Arrows trace chronological growth over the years",
-    x = "Total Infrastructure Capacity (GW)",
-    y = "Total End-User Consumption (Terajoules)",
-    color = "Country"
-  )
-```
-
-``` {r}
-regional_top_countries <- energy %>%
-  # Filter out unwanted regions
-  # Sum up all absolute end-user consumption columns for every individual row
-  rowwise() %>%
-  mutate(total_row_consumption = sum(c_across(ends_with("_consumed_tj")), na.rm = TRUE)) %>%
-  ungroup() %>%
-  # Group by region and country to get lifetime totals across all available years
-  group_by(region, country) %>%
-  summarise(cumulative_consumption = sum(total_row_consumption, na.rm = TRUE), .groups = "drop_last") %>%
-  # Rank countries locally inside their respective region profiles
-  mutate(consumption_rank = min_rank(desc(cumulative_consumption))) %>%
-  # Keep only the top 5 positions for each region group
-  filter(consumption_rank <= 5) %>%
+  filter(all(!is.na(activity_index) & !is.na(efficiency_index) & !is.na(structure_index))) %>%
   ungroup()
 
-# Step 2: Filter your core dataset to keep ONLY these regional leaders
-energy_regional_top5 <- energy %>%
-  filter(country %in% regional_top_countries$country) %>%
-  select(
-    country, region, year, total_capacity_gw,
-    Biogas = biogas_consumed_tj,
-    Geothermal = geothermal_energy_consumed_tj,
-    Hydro = hydro_energy_consumed_tj,
-    `Liquid Biofuels` = liquid_biofuels_consumed_tj,
-    Marine = marine_consumed_tj,
-    `Modern Biomass` = modern_biomass_consumed_tj,
-    Solar = solar_energy_consumed_tj,
-    `Traditional Biomass` = traditional_biomass_consumed_tj,
-    Waste = waste_energy_consumed_tj,
-    Wind = wind_energy_consumed_tj
+energy_ts %>%
+  filter(country %in% top_5_countries) %>%
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = structure_index, color = "Economic Structure")) +
+  geom_line(aes(y = efficiency_index, color = "Tech Efficiency")) +
+  facet_wrap(~country, scales = "free_y") +
+  labs(title = "Index Tracking Across Sample Nations")
+```
+
+Firstly, it can be noted that all top five nations have complete records of their indices, meaning that the graph is accurate to that regard.
+
+China and India are presented as developing economies, with their structure index increasing over time. Japan, Russia, and the US are shown to be developed, with a stable structure index across the 20-year period.
+
+All countries show a decrease in the efficiency index, which means that technology improves efficiency over time. China and India show a constant decrease due to rapid industrialization. The spike in Russia's efficiency index is due to the economic restructuring post-Soviet Union, which returns to a lowering index after this period. Meanwhile, Japan's spikes during the '90s are the effects of the asset bubble burst in the early '90s, wherein stock prices were overtly inflated until interest rates were raised.
+
+#### Driving Factor Scatter Plot
+
+```{r}
+energy_milestones <- energy_ts %>% 
+  filter(year %in% c(1995, 2000, 2005, 2010))
+
+p1 <- ggplot(energy_milestones, aes(x = structure_index, y = primary_energy_savings_tj)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(
+    trans = "pseudo_log", 
+    breaks = c(-1e8, 0, 1e8), 
+    labels = c("-100M", "0", "100M")
+  ) +
+  facet_wrap(~year, nrow = 1) + 
+  theme_minimal() +
+  labs(title = "Driving Factors Over Time", y = "Primary Energy Savings (TJ)", x = "Structure Index")
+
+
+p2 <- ggplot(energy_milestones, aes(x = efficiency_index, y = primary_energy_savings_tj)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(
+    trans = "pseudo_log", 
+    breaks = c(-1e8, 0, 1e8), 
+    labels = c("-100M", "0", "100M")
+  ) +
+  facet_wrap(~year, nrow = 1) + 
+  theme_minimal() +
+  labs(y = "Primary Energy Savings (TJ)", x = "Efficiency Index")
+
+p1 / p2
+```
+
+There is a continuously positive correlation between primary energy savings and the structure index. However, its slope becomes less steep due to diminishing returns from energy savings. Two groups of countries are noted above and below the trendline, showing a distinction of energy-saving and energy-expanding countries.
+
+Efficiency has a steep, near-continuous, negative correlation to primary energy savings, showing that this index is a strong driver for savings.
+
+### Regional Absolute Decoupling
+
+### Decoupling Trajectory
+
+We apply the Tapio decoupling model. which analyzes the relationship between energy consumption and economic wealth. We group these into seven distinct states:
+
+- Strong Decoupling \| Economic wealth increases, energy consumption decreases
+
+- Weak Decoupling \| Both increase, but economic wealth has a faster growth rate
+
+- Expansive Coupling \| Economic wealth and energy consumption grow at the same pace
+
+- Expansive Negative Decoupling \| Energy consumption grows significantly faster than economic wealth
+
+- Recessive Coupling \| Occurs when economic wealth shrinks
+
+- Strong Negative Decoupling \| Economic wealth decreases, energy consumption increases
+
+- Weak Negative Decoupling \| Both decrease, but energy consumption has a slower decline rate
+
+I used the following formulas to calculate for derived GDP and relative growth rates. Derived GDP is our value that represents GDP if it is absent from the dataset.
+
+- Energy Intensity = Mean of Final Energy PPP (MJ)
+
+- Total Consumption of Primary Energy (TCPE) = Sum of Total Primary Energy (TJ)
+
+<!-- -->
+
+- Derived GDP = TCPE / Energy Intensity
+
+- \% Change = (Value in Current Year - Value in Previous Year) / Value in Previous Year
+
+  - Previous year value is calculated with the `lag()` function
+
+- Tapio Elasticity = % Change of Consumption / % Change of Wealth
+
+```{r}
+tapio_analysis <- energy_ts %>%
+  as_tibble() %>% 
+  group_by(region, year) %>%
+  summarise(
+    energy_intensity = mean(final_energy_ppp_mj, na.rm = TRUE),
+    total_consumption_tj = sum(total_primary_tj, na.rm = TRUE),
+    .groups = "drop"
   ) %>%
-  pivot_longer(
-    cols = Biogas:Wind,
-    names_to = "renewable_type",
-    values_to = "consumption_tj"
-  ) %>%
+  group_by(region) %>% 
+  arrange(year) %>%
   mutate(
-    consumption_tj = replace_na(consumption_tj, 0),
-    total_capacity_gw = replace_na(total_capacity_gw, 0)
-  )
+    derived_gdp = (total_consumption_tj * 1000000) / energy_intensity,
+    pct_change_consumption = (total_consumption_tj - lag(total_consumption_tj)) / lag(total_consumption_tj),
+    pct_change_wealth = (derived_gdp - lag(derived_gdp)) / lag(derived_gdp),
+    tapio_elasticity = pct_change_consumption / pct_change_wealth,
+ 
+    decoupling_state = case_when(
+      pct_change_wealth > 0  & pct_change_consumption < 0  ~ "Strong Decoupling",
+      pct_change_wealth > 0  & pct_change_consumption > 0  & tapio_elasticity < 0.8  ~ "Weak Decoupling",
+      pct_change_wealth > 0  & pct_change_consumption > 0  & tapio_elasticity >= 0.8 & tapio_elasticity <= 1.2 ~ "Expansive Coupling",
+      pct_change_wealth > 0  & pct_change_consumption > 0  & tapio_elasticity > 1.2  ~ "Expansive Negative Decoupling",
+      pct_change_wealth < 0  & pct_change_consumption < 0  & tapio_elasticity > 1.2  ~ "Recessive Decoupling",
+      pct_change_wealth < 0  & pct_change_consumption < 0  & tapio_elasticity >= 0.8 & tapio_elasticity <= 1.2 ~ "Recessive Coupling",
+      pct_change_wealth < 0  & pct_change_consumption < 0  & tapio_elasticity < 0.8  ~ "Weak Negative Decoupling",
+      pct_change_wealth < 0  & pct_change_consumption > 0  ~ "Strong Negative Decoupling",
+      TRUE ~ "Undefined"
+    )
+  ) %>%
+  ungroup()
 
-viz_consumption <- energy_regional_top5 %>%
-  group_by(region, country, renewable_type) %>%
-  summarise(total_tj = sum(consumption_tj, na.rm = TRUE), .groups = "drop")
-
-ggplot(viz_consumption, aes(x = country, y = total_tj, fill = renewable_type)) +
-  geom_bar(stat = "identity", position = "stack") +
-  # Create separate plot windows for each region with custom adjusted Y-axes scales
-  facet_wrap(~region, scales = "free") + 
-  theme_minimal() +
-  labs(
-    title = "Top 5 End-User Energy Consuming Countries per Region",
-    x = "Country",
-    y = "Total Energy Consumption (Terajoules)",
-    fill = "Renewable Type"
+ggplot(tapio_analysis, aes(x = derived_gdp, y = total_consumption_tj, color = region)) +
+  geom_path(arrow = arrow(length = unit(0.2, "cm")), alpha = 0.8, linewidth = 0.8) + 
+  geom_point(alpha = 0.4, size = 1) +
+  scale_x_log10(
+    labels = scales::label_scientific(),
+    name = "Derived Economic Wealth (GDP PPP USD equivalent)"
   ) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-    strip.text = element_text(face = "bold", size = 10)
-  )
-
-# Aggregate maximum grid capacity metrics for visualization
-viz_capacity <- energy_regional_top5 %>%
-  group_by(region, country) %>%
-  summarise(avg_capacity = mean(total_capacity_gw, na.rm = TRUE), .groups = "drop")
-
-ggplot(viz_capacity, aes(x = country, y = avg_capacity, fill = region)) +
-  geom_bar(stat = "identity", show.legend = FALSE) +
-  facet_wrap(~region, scales = "free") +
-  theme_minimal() +
-  scale_fill_brewer(palette = "Set2") +
-  labs(
-    title = "Infrastructure Grid Footprint for Top Regional Energy Users",
-    x = "Country",
-    y = "Average Generation Capacity (Gigawatts)"
+  scale_y_log10(
+    labels = scales::label_scientific(),
+    name = "Total Primary Energy Consumption (TJ)"
   ) +
+  scale_color_brewer(palette = "Dark2") +
+  theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-    strip.text = element_text(face = "bold", size = 10)
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "Corrected Decoupling Trajectories by Region",
+    subtitle = "Log-Log scale comparison of energy elasticity",
+    color = "Region"
   )
 ```
+
+The regions can be grouped into two distinct categories: those with high GDP and high energy consumption, and those with low energy and low energy consumption.
+
+We can observe that East Asia and the Pacific has uninterrupted, steady growth and exhibits primarily weak decoupling. Its economic wealth either grows more rapidly or at the same pace as its energy consumption. Europe and Central Asia shifts primarily between strong and weak decoupling, meaning that energy consumption shifts between increasing and decreasing as their wealth increases. North America exhibits primarily weak decoupling, but expansive negative decoupling also occurs, with energy consumption growing faster than its economic wealth.
+
+Latin America and the Caribbean shows patterns of weak decoupling and strong negative decoupling, as well as Sub-Saharan Africa. This shows that energy consumption often continuously increases, but economic wealth either grows faster or declines entirely. The Middle East and North Africa is an exception by primarily demonstrating expansive coupling. Energy usage and wealth grows at the same pace.
+
+```{r}
+decoupling_summary <- tapio_analysis %>%
+  filter(!is.na(decoupling_state), decoupling_state != "Undefined") %>%
+  group_by(region, decoupling_state) %>%
+  tally(name = "years_in_state") %>%
+  mutate(share_of_time_pct = round(years_in_state / sum(years_in_state) * 100, 1)) %>%
+  arrange(region, desc(share_of_time_pct))
+
+print(decoupling_summary, n = 30)
+
+```
+
+------------------------------------------------------------------------
+
+### Imputation of Missing Data
+
+#### Original Solution
+
+Our next concern after exploratory data analysis is imputing missing data.
+
+My original thought process was to run the entire dataset on one algorithm, applying linear time-series interpolation or MICE for 10-50% and 50-80% of missing ranges, respectively. However, this should not be done. The variables we are dealing with in the dataset differ in volatility and trend smoothness, so they must first be grouped into types before applying specific algorithms based on the amount of N/A values,
+
+##### Linear Time-Series Interpolation
+
+Linear time-series interpolation works by "drawing a line" between the closest values before and after the missing value, making use of the slope to determine the new value. For example, if the value for consumed terajoules of wind energy is 100 TJ in 2014 and 300 TJ in 2016, it would be 200 TJ in 2015.
+
+This does *not* work for wide gaps of missing data as it leads to linear trends, completely disregarding volatility.
+
+##### Multivariate Imputation by Chained Equations (MICE)
+
+MICE works by looking at each missing value individually and predicting its value using the remaining data, repeating until the predictions stabilize. Our specific method makes use of Classification and Regression Trees (CART), which groups similar rows of data together as reference for missing rows. The prediction for the missing row is then predicted based on the values of the group where it is located.
+
+The original code does *not* work for chronological dependencies, such as lags, leads, and autocorrelation, destroying the time-series structure. This was later on tweaked to account for such structure.
+
+##### Amelia
+
+Amelia relies on an Expectation-Maximization algorithm with bootstrapping, which assumed that variables followed a multivariate normal (MVN) distribution, which does not work for energy consumption variables. Such values have two peaks and are bimodal, showing a cluster of two distinct groups: one for nations with zero consumption of that energy source, and another for countries that regularly consume it. Amelia also kept running into matrix algebra singularity, meaning that the data matrix could not be inversed as variables were copies of one another.
+
+#### New Solution
+
+##### Variable Grouping
+
+The first step in our new solution is to group variables by their volatility. These fall into three groups:
+
+- **Block A** \| Index and PPP variables, which have smooth structural trends
+
+- **Block B** \| Access variables, which are bounded and monotonically increasing
+
+- **Block C** \| Energy consumption variables, which are highly dependent and volatile on other factors
+
+```{r}
+energy_base <- energy %>%
+  select(country, country_code, year, region)
+
+block_A <- energy %>%
+  select(
+    country, year, 
+    activity_index, efficiency_index, structure_index, fp_ratio_pct,
+    final_energy_ppp_mj, primary_energy_ppp_mj
+    )
+
+block_B <- energy %>% 
+  select(
+    country, year,
+    rural_access_fuel, total_access_fuel, urban_access_fuel,
+    rural_access_elec, total_access_elec, urban_access_elec,
+    renewable_capacity_pct, renewable_capacity_gw, total_capacity_gw,
+    power_lost_pct, thermal_eff_pct
+  )
+
+block_C <- energy %>% 
+  select(
+    country, year,
+    # system totals
+    primary_energy_savings_tj, total_final_consumed_tj, total_primary_tj, total_final_eu,
+    # output
+    renewable_gwh, total_output_gwh,
+    # consumed by sectors
+    energy_agri_mj, energy_industrial_mj, energy_others_mj,
+    # fuel penetration rate (%)
+    biogas_eu_pct, geothermal_energy_eu_pct, hydro_energy_eu_pct,
+    liquid_biofuels_energy_eu_pct, marine_energy_eu_pct, modern_biomass_energy_eu_pct,
+    solar_energy_eu_pct, traditional_biomass_eu_pct, waste_energy_eu_pct, wind_energy_eu_pct,
+    # fuel consumption volume (TJ)
+    biogas_consumed_tj, geothermal_energy_consumed_tj, hydro_energy_consumed_tj,
+    liquid_biofuels_consumed_tj, marine_consumed_tj, modern_biomass_consumed_tj,
+    solar_energy_consumed_tj, traditional_biomass_consumed_tj, waste_energy_consumed_tj,
+    wind_energy_consumed_tj
+  )
+```
+
+##### Setting Individual Solutions
+
+- **Block A**
+
+  - **Multivariate Kalman Filter** \| This method runs over all observations over the time period and analyzes all variables simultaneously. It runs through the data forward to store its values, then backwards to integrate future patterns into past data, "smoothing" out the dataset. It also applies cross-coupling, connecting variables through their covariances to simultaneously adjust cross-variable errors. We apply a structural time-series model to break down the data.
+
+- **Block B**
+
+  - **Logistic/Bounded Imputation** \| This method imputes values within the bound of 0 to 100 through bootstrapping and the Expectation-Maximization (EM) algorithm, with a single pass. We use the `amelia` package.
+
+    - **Bootstrapping** \| This resamples from the existing dataset for a number of times to calculate confidence intervals.
+
+    - **EM Algorithm** \| The expectation step calculates the expected value of the missing data, then recalculates the existing model parameters for the maximization step. This process repeats cyclically until both existing and missing data stop changing significantly.
+
+- **Block C**
+
+  - **Multivariate Imputation by Chained Equations** \| The code was modified to take lag and lead into account. Columns were created for lag, lead, and mean variables for each fuel source. CART is still used as it relies on Predictive Mean Matching (PMM), drawing data points from existing rows. This prevented impossible spikes in data, which happened when `Amelia` was used.
+  - **Panel Boundary Framing** \| This once again makes use of the `zoo` package, addressing the fact that vanilla tree models from CART do not understand temporal data. As the `country` variable was blocked to prevent crashes, context was lacking for the model. This causes the model to look at other macroeconomic variables and applying high energy consumption values if its references had similar trends. This would cause it to plug in extremely high values and creating a spike, causing an unnatural prediction in the dataset. By using Last Observation Carried Forward (LOCF), gaps were filled out to smooth out trends.
+
+```{r}
+library(zoo)
+amelia_A <- amelia(
+  x = as.data.frame(block_A),
+  m = 1,
+  cs = "country",
+  ts = "year",
+  polytime = 2 # allows smooth structural curvature over time
+)
+block_A_clean <- amelia_A$imputations$imp1
+
+matrix_B <- block_A_clean %>%
+  inner_join(block_B, by = c("country", "year")) %>%
+  mutate(across(where(is.character), as.factor))
+
+b_pct_cols <- c("rural_access_fuel", "total_access_fuel", "urban_access_fuel",
+                "rural_access_elec", "total_access_elec", "urban_access_elec",
+                "renewable_capacity_pct", "power_lost_pct", "thermal_eff_pct")
+
+bounds_B_matrix <- matrix(NA, nrow = length(b_pct_cols), ncol = 3)
+for(i in seq_along(b_pct_cols)) {
+  # sets bounds
+  bounds_B_matrix[i, ] <- c(which(names(matrix_B) == b_pct_cols[i]), 0, 100)
+}
+
+# ppp and index variables as anchors
+amelia_B <- amelia(
+  x = as.data.frame(matrix_B),
+  m = 1, # uses a single deterministic pass
+  cs = "country",
+  ts = "year",
+  bounds = bounds_B_matrix,
+  polytime = 1
+)
+block_B_clean <- amelia_B$imputations$imp1 %>%
+  select(country, year, all_of(names(block_B)[-c(1,2)]))
+
+# builds matrix_C and run the structural zero mask safely
+matrix_C <- block_A_clean %>%
+  inner_join(block_B_clean, by = c("country", "year")) %>%
+  inner_join(block_C, by = c("country", "year")) %>%
+  inner_join(select(energy_base, country, year, region), by = c("country", "year")) %>%
+  mutate(region = as.factor(region))
+
+# fuel columns
+fuel_cols <- c("biogas_consumed_tj", "geothermal_energy_consumed_tj", 
+               "hydro_energy_consumed_tj", "liquid_biofuels_consumed_tj", 
+               "marine_consumed_tj", "modern_biomass_consumed_tj", 
+               "solar_energy_consumed_tj", "traditional_biomass_consumed_tj", 
+               "waste_energy_consumed_tj", "wind_energy_consumed_tj", 
+               "primary_energy_savings_tj")
+
+# dynamically create lag, lead, and mean columns
+matrix_C_panel <- matrix_C %>%
+  group_by(country) %>%
+  arrange(year) %>%
+  mutate(
+    # complete panel timeline imputation using zoo
+    across(all_of(fuel_cols), ~ {
+      if(sum(!is.na(.x)) >= 2) {
+        # interpolate internal missing years safely
+        interp <- zoo::na.approx(.x, na.rm = FALSE)
+        # extrapolate leading/trailing edge missing years to stabilize boundaries
+        zoo::na.locf(zoo::na.locf(interp, na.rm = FALSE), fromLast = TRUE, na.rm = FALSE)
+      } else if (sum(!is.na(.x)) == 1) {
+        # if only one historical point exists, carry it across the whole country timeline
+        zoo::na.locf(zoo::na.locf(.x, na.rm = FALSE), fromLast = TRUE, na.rm = FALSE)
+      } else {
+        .x
+      }
+    }),
+    
+    # Creates "lag_1_" prefixes for all fuels
+    across(all_of(fuel_cols), ~ lag(.x, 1), .names = "lag_1_{.col}"),
+    
+    # Creates "lead_1_" prefixes for all fuels
+    across(all_of(fuel_cols), ~ lead(.x, 1), .names = "lead_1_{.col}"),
+    
+    # Creates "mean_" prefixes for all country-specific baseline averages
+    across(all_of(fuel_cols), ~ mean(.x, na.rm = TRUE), .names = "mean_{.col}")
+  ) %>%
+  ungroup() %>%
+  mutate(
+    country = as.factor(country),
+    region = as.factor(region)
+  )
+
+# initialize predictor matrix
+init_mice <- mice(matrix_C_panel, maxit = 0)
+meth <- init_mice$method
+pred <- init_mice$predictorMatrix
+
+# adding CART method
+for (col in names(matrix_C_panel)) {
+  if (any(is.na(matrix_C_panel[[col]]))) {
+    meth[col] <- "cart"  # tree methods prevent matrix algebra singularity i.e. determinant of zero
+  } else {
+    meth[col] <- ""      
+  }
+}
+
+# refine predictor matrix
+pred[, "country"] <- 0  # block country factor
+
+# predicted by time, their own lags, leads, and country means
+for (col in fuel_cols) {
+  if (col %in% colnames(pred)) {
+    # structural variables are removed
+    pred[col, ] <- 0
+    
+    # strict timeline constraints for this variable
+    pred[col, "year"] <- 1
+    pred[col, paste0("lag_1_", col)] <- 1
+    pred[col, paste0("lead_1_", col)] <- 1
+    pred[col, paste0("mean_", col)] <- 1
+  }
+}
+
+# run MICE with the full dynamic temporal architecture
+mice_C <- mice(
+  data = matrix_C_panel,
+  m = 5,
+  method = meth,
+  predictorMatrix = pred,
+  maxit = 10,
+  seed = 123
+)
+
+# drop temporary anchor columns seamlessly
+block_C_clean_mice <- complete(mice_C, 1) %>%
+  select(-starts_with("lag_1_"), -starts_with("lead_1_"), -starts_with("mean_"))
+
+# final dataset
+final_energy_data <- energy_base %>%
+  inner_join(block_C_clean_mice, by = c("country", "year"))
+
+# verify completeness
+vis_miss(final_energy_data) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0, size = 6))
+```
+
+#### Checking
+
+Now that data has been imputed, we can do a quick check to see if our imputation is stable.
+
+##### Time-Series Imputation Trajectory Check
+
+```{r}
+# combine observed and imputed datasets for visualization
+all_imputations <- complete(mice_C, "long", include = TRUE)
+
+# test country for missing values
+country_check <- all_imputations %>%
+    filter(country == "Chile") %>%
+    mutate(Data_Type = ifelse(.imp == 0, "Observed", paste0("Imputation ", .imp)))
+
+# time-series trends
+ggplot(country_check, aes(x = year, y = solar_energy_consumed_tj, color = Data_Type, group = .imp)) +
+    geom_line(aes(alpha = ifelse(.imp == 0, 1, 0.4)), size = 1) +
+    geom_point(aes(size = ifelse(.imp == 0, 2, 1))) +
+    scale_alpha_identity() +
+    scale_size_identity() +
+    theme_minimal() +
+    labs(title = "Time-Series Imputation Trajectory Check", color = "Dataset Type", x = "Year", y = "Solar Energy Consumed (TJ")
+```
+
+The imputation has been stabilized, with no spikes present.
+
+##### Variance and Domain Boundaries Check
+
+```{r}
+stripplot(
+  mice_C, 
+  solar_energy_consumed_tj ~ .imp, 
+  pch = 20, 
+  cex = 0.5, 
+  col = c("blue", "red"),
+  main = "Observed vs. Imputed Solar Energy Consumption Data",
+  xlab = "Imputation Number (1 = Observed Data)",
+  ylab = "Solar Energy Consumed (TJ)",
+  key = list(
+    space = "right",
+    text = list(c("Observed", "Imputed")),
+    points = list(col = c("blue", "red"), pch = 20, cex = 1.0)
+  )
+)
+```
+
+For all imputations, there is a similar distribution from the observed and imputed values. The bounds are also followed, with no negative values.
+
+##### Cross-Variable Relationships Check
+
+```{r}
+xyplot(
+  mice_C, 
+  solar_energy_consumed_tj ~ total_access_elec, 
+  pch = 20, 
+  cex = 0.6, 
+  col = c("blue", "red"),
+  main = "Cross-Variable Integrity: Solar Consumption vs. Electricity Access",
+  xlab = "Total Electricity Access (%)",
+  ylab = "Solar Energy Consumed (TJ)",
+  key = list(
+    space = "right",
+    text = list(c("Observed", "Imputed")),
+    points = list(col = c("blue", "red"), pch = 20, cex = 1.0)
+  )
+)
+
+```
+
+Covariance is preserved as the observed and imputed values have a singular point cloud. The imputed values are also not oversimplified, as the red dots are realistically scattered around the graph.
+
+### Structural Analysis
+
+#### To what extent does expanding total electricity access accelerate a nation's shift from traditional biomass toward modern renewable energy sources?
+
+##### Two-Way Fixed-Effects Panel Regression Model
+
+```{r}
+# parsing of imputation list
+completed_datasets_long <- complete(mice_C, "long", include = TRUE)
+mids_panel_wrapper <- as.mids(completed_datasets_long)
+implist <- mice::complete(mids_panel_wrapper, action = "all")
+
+panel_fits_q1 <- lapply(implist, function(d) {
+  d_clean <- d %>%
+    mutate(
+      modern_renewable_tj = solar_energy_consumed_tj + wind_energy_consumed_tj +
+        hydro_energy_consumed_tj + biogas_consumed_tj + 
+        geothermal_energy_consumed_tj
+    )
+  
+  # impact on traditional biomass
+  fit_biomass <- plm(traditional_biomass_consumed_tj ~ total_access_elec, 
+                     data = d_clean, index = c("country", "year"), model = "within", effect = "twoways")
+  fit_biomass$vcov <- vcovHC(fit_biomass, type = "HC1", cluster = "group")
+  
+  # impact on modern renewables
+  fit_modern <- plm(modern_renewable_tj ~ total_access_elec, 
+                    data = d_clean, index = c("country", "year"), model = "within", effect = "twoways")
+  fit_modern$vcov <- vcovHC(fit_modern, type = "HC1", cluster = "group")
+  
+  list(biomass = fit_biomass, modern = fit_modern)
+})
+
+fits_q1_biomass <- as.mira(lapply(panel_fits_q1, `[[`, "biomass"))
+fits_q1_modern  <- as.mira(lapply(panel_fits_q1, `[[`, "modern"))
+
+cat("\n Traditional Biomass Results \n")
+print(summary(pool(fits_q1_biomass)))
+cat("\n Modern Renewables Results \n")
+print(summary(pool(fits_q1_modern)))
+```
+
+A 1% increase in total electricity access leads to an average reduction of 8.28 TJ in traditional biomass. However, with a p-value of 0.972, this value is statistically insignificant due to the high standard error. On the other hand, a 1% increase in access leads to an addition of 124.17 TJ of renewable energy consumption, although still statistically insignificant at p-value = 0.255. This means that while increasing access correlates with a shift to renewables, it is not a significant driving force.
+
+#### How do shifts in a nation's economic structure compare to improvements in technological efficiency when it comes to driving absolute primary energy savings?
+
+##### Two-Way Fixed-Effects Panel Regression Model
+
+```{r}
+panel_fits_q2 <- lapply(implist, function(d) {
+  # Dependent: absolute primary savings
+  # Predictors: Economic structure (activity_index) vs Tech Efficiency (efficiency_index)
+  model <- plm(
+    primary_energy_savings_tj ~ activity_index + efficiency_index, 
+    data = d, index = c("country", "year"), model = "within", effect = "twoways"
+  )
+  model$vcov <- vcovHC(model, type = "HC1", cluster = "group")
+  return(model)
+})
+
+cat("\n Absolute Savings Drivers Results \n")
+print(summary(pool(as.mira(panel_fits_q2))))
+```
+
+A 1% increase in activity index leads to a 1.02 million TJ increase in primary energy savings, though statistically insignificant. The 1% increase in efficiency index also leads to a drop of -448333.3 TJ in savings, but also statistically insignificant. Despite the high p-values, the impact of both activity and efficiency indices are nonetheless numerically large.
+
+#### Which regions have successfully achieved absolute decoupling i.e. growing economic wealth while simultaneously decreasing total primary energy consumption?
+
+##### Time-Series Trend Grouping
+
+```{r}
+regional_decoupling <- map_dfr(implist, function(d) {
+  d %>%
+    group_by(region, year) %>%
+    summarise(
+      regional_wealth = mean(activity_index, na.rm = TRUE),
+      regional_energy = mean(total_primary_tj, na.rm = TRUE),
+      .groups = "drop"
+    )
+}, .id = "imputation") %>%
+  group_by(region, year) %>%
+  # average imputations for stabilization of parameters
+  summarise(
+    wealth = mean(regional_wealth),
+    energy = mean(regional_energy),
+    .groups = "drop"
+  ) %>%
+  group_by(region) %>%
+  # linear summary tracking for trends over time
+  summarise(
+    Wealth_Trend_Slope = coef(lm(wealth ~ year))[2],
+    Energy_Consumption_Slope = coef(lm(energy ~ year))[2],
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Decoupling_Status = case_when(
+      Wealth_Trend_Slope > 0 & Energy_Consumption_Slope < 0 ~ "Absolute Decoupling (Ideal)",
+      Wealth_Trend_Slope > 0 & Energy_Consumption_Slope > 0 ~ "Relative Decoupling / Coupled Growth",
+      TRUE ~ "Stagnant / Regressive"
+    )
+  )
+
+cat("\n--- Q3: REGIONAL ABSOLUTE DECOUPLING DIAGNOSTIC TABLE ---\n")
+print(regional_decoupling)
+```
+
+No countries were successful in achieving absolute decoupling, meaning that their energy consumption grew with their economic wealth.
+
+```{r}
+indexed_regional_data <- map_dfr(implist, function(d) {
+  d %>%
+    group_by(region, year) %>%
+    summarise(
+      regional_wealth = mean(activity_index, na.rm = TRUE),
+      regional_energy = mean(total_primary_tj, na.rm = TRUE),
+      .groups = "drop"
+    )
+}, .id = "imputation") %>%
+  group_by(region, year) %>%
+  summarise(
+    Wealth = mean(regional_wealth),
+    Energy = mean(regional_energy),
+    .groups = "drop"
+  ) %>%
+  group_by(region) %>%
+  arrange(year) %>%
+  mutate(
+    Wealth_Indexed = (Wealth / first(Wealth)) * 100,
+    Energy_Indexed = (Energy / first(Energy)) * 100
+  ) %>%
+  ungroup() %>%
+  pivot_longer(
+    cols = c(Wealth_Indexed, Energy_Indexed),
+    names_to = "Metric",
+    values_to = "Indexed_Value"
+  ) %>%
+  mutate(
+    Metric = ifelse(Metric == "Wealth_Indexed", "Economic Wealth (Index)", "Primary Energy Use (Index)")
+  )
+
+ggplot(indexed_regional_data, aes(x = year, y = Indexed_Value, color = Metric, linetype = Metric)) +
+  geom_hline(yintercept = 100, color = "darkgray", linetype = "dashed", size = 0.5) +
+  geom_line(size = 1.1) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  facet_wrap(~ region, scales = "free_y", ncol = 3) +
+  scale_color_manual(values = c("aquamarine4", "tomato2")) +
+  theme_minimal(base_family = "sans") +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, margin = margin(b = 10)),
+    plot.subtitle = element_text(color = "dimgray", size = 10, margin = margin(b = 15)),
+    strip.text = element_text(face = "bold", size = 10, color = "black"),
+    panel.background = element_rect(fill = "#FAF9F6", color = NA),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(
+    title = "Testing for Absolute Decoupling Across Global Regions",
+    subtitle = "Tracking cumulative growth relative to 1990 baseline levels (1990 = 100%)",
+    x = "Year Timeline",
+    y = "Indexed Growth Scale (%)"
+  )
+
+```
+
+The plot above shows that wealth grows much higher than primary energy usage. To achieve absolute decoupling, primary energy usage would need to grow below the 100% baseline as wealth continues to go up.
+
+------------------------------------------------------------------------
+
+## Results and Conclusions
+
+The primary objective of this project is to investigate the relationship between economic growth and energy consumption, wherein it's often assumed that increasing electricity access leads to a shift from traditional biomass to renewable energy sources. However, it is shown by the statistical analysis and data visualization that this is not necessarily the case. It must also be noted that shifts are rarely linear for each nation. In contrast to the global trend of energy shifts, tracking energy consumption at a per-nation level shows that an expanded grid does not immediately drive a transition to renewables. Furthermore, absolute decoupling remains unachieved across all regions.
+
+Despite the fixed-effects panel regression model showing a decrease in traditional biomass usage and an increase in renewable energy usage, these effects remain statistically insignificant upon the application of robust standard errors. The application of such is meant to control for historical timeline correlation.
+
+Growth in economic activity has shown itself to be more impactful than increasing technological efficiency in saving energy. This demonstrates the Jevons paradox, which means that increasing efficiency actually increases energy consumption rather than decreasing it. Although neither effect is statistically significant, the magnitude of its effect on primary energy savings show a larger impact.
+
+Analyzing trends show that no region has achieved absolute decoupling as a collective. To make this transition, reducing emissions is not enough. Digitalization of industries is also a commonly cited solution; however, the current widespread issue of data centers show that large amounts of electricity is needed for powering and cooling these buildings. Furthermore, energy continues to be largely consumed during the construction and installation of equipment for renewable sources.
+
+With these factors in mind, it is important for policymakers, scientists, and other actors to deeply understand the potential solutions for mitigating energy usage. It has been shown that energy consumption plays a vital part in all aspects of growing a nation; thus, further steps must be taken to responsibly consume it.
