@@ -3,7 +3,6 @@ title: "Drives and Outcomes of Transitioning to Clean Energy"
 author: "Sam Gianan"
 date: "2026-07-31"
 output:
-  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -398,6 +397,10 @@ energy_ts %>%
     x = "Electricity Access (%)",
     y = "Traditional Biomass Consumed (TJ)",
     color = "Location Type"
+  ) +
+  scale_color_manual(
+    values = c("rural_access_elec" = "#F8766D", "urban_access_elec" = "#00BFC4"), 
+    labels = c("rural_access_elec" = "Rural", "urban_access_elec" = "Urban")
   )
 
 ```
@@ -432,7 +435,11 @@ energy_ts %>%
   geom_line(aes(y = structure_index, color = "Economic Structure")) +
   geom_line(aes(y = efficiency_index, color = "Tech Efficiency")) +
   facet_wrap(~country, scales = "free_y") +
-  labs(title = "Index Tracking Across Sample Nations")
+  labs(title = "Index Tracking Across Sample Nations",
+    x = "Year",
+    y = "Index Value",
+    color = "Index Type"
+  )
 ```
 
 Firstly, it can be noted that all top five nations have complete records of their indices, meaning that the graph is accurate to that regard.
@@ -512,6 +519,8 @@ I used the following formulas to calculate for derived GDP and relative growth r
 - \% Change = (Value in Current Year - Value in Previous Year) / Value in Previous Year
 
   - Previous year value is calculated with the `lag()` function
+  
+  - It is important to explicitly put `dplyr::lag()` instead of simply `lag()` as the `tidyverse` function gets overriden by another package
 
 - Tapio Elasticity = % Change of Consumption / % Change of Wealth
 
@@ -528,8 +537,8 @@ tapio_analysis <- energy_ts %>%
   arrange(year) %>%
   mutate(
     derived_gdp = (total_consumption_tj * 1000000) / energy_intensity,
-    pct_change_consumption = (total_consumption_tj - lag(total_consumption_tj)) / lag(total_consumption_tj),
-    pct_change_wealth = (derived_gdp - lag(derived_gdp)) / lag(derived_gdp),
+    pct_change_consumption = (total_consumption_tj - dplyr::lag(total_consumption_tj)) / dplyr::lag(total_consumption_tj),
+    pct_change_wealth = (derived_gdp - dplyr::lag(derived_gdp)) / dplyr::lag(derived_gdp),
     tapio_elasticity = pct_change_consumption / pct_change_wealth,
  
     decoupling_state = case_when(
@@ -576,7 +585,7 @@ We can observe that East Asia and the Pacific has uninterrupted, steady growth a
 
 Latin America and the Caribbean shows patterns of weak decoupling and strong negative decoupling, as well as Sub-Saharan Africa. This shows that energy consumption often continuously increases, but economic wealth either grows faster or declines entirely. The Middle East and North Africa is an exception by primarily demonstrating expansive coupling. Energy usage and wealth grows at the same pace.
 
-```{r}
+```{r results = "show"}
 decoupling_summary <- tapio_analysis %>%
   filter(!is.na(decoupling_state), decoupling_state != "Undefined") %>%
   group_by(region, decoupling_state) %>%
@@ -585,7 +594,6 @@ decoupling_summary <- tapio_analysis %>%
   arrange(region, desc(share_of_time_pct))
 
 print(decoupling_summary, n = 30)
-
 ```
 
 ------------------------------------------------------------------------
@@ -905,7 +913,7 @@ Covariance is preserved as the observed and imputed values have a singular point
 
 ##### Two-Way Fixed-Effects Panel Regression Model
 
-```{r}
+```{r results = "show"}
 # parsing of imputation list
 completed_datasets_long <- complete(mice_C, "long", include = TRUE)
 mids_panel_wrapper <- as.mids(completed_datasets_long)
@@ -947,7 +955,7 @@ A 1% increase in total electricity access leads to an average reduction of 8.28 
 
 ##### Two-Way Fixed-Effects Panel Regression Model
 
-```{r}
+```{r results = "show"}
 panel_fits_q2 <- lapply(implist, function(d) {
   # Dependent: absolute primary savings
   # Predictors: Economic structure (activity_index) vs Tech Efficiency (efficiency_index)
@@ -969,7 +977,7 @@ A 1% increase in activity index leads to a 1.02 million TJ increase in primary e
 
 ##### Time-Series Trend Grouping
 
-```{r}
+```{r results = "show"}
 regional_decoupling <- map_dfr(implist, function(d) {
   d %>%
     group_by(region, year) %>%
